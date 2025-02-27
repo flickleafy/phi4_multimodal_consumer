@@ -1,0 +1,20 @@
+packaging>=20.0
+wheel>=0.38.0
+setuptools>=42.0.0
+numpy>=1.20.0
+torch==2.6.0
+transformers==4.48.2
+accelerate==1.4.0
+soundfile==0.13.1
+pillow==11.1.0
+scipy==1.15.2
+torchvision==0.21.0
+backoff==2.2.1
+peft==0.14.0
+datasets==3.3.2
+pandas==2.2.3
+# Using a pre-built version of flash-attn that's more stable
+#flash-attn==2.5.5
+evaluate==0.4.3
+sacrebleu==2.5.1
+bitsandbytes>=0.39.0
