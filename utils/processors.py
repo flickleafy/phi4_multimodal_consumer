@@ -155,6 +155,7 @@ def refine_transcription(
     user_prompt: str,
     assistant_prompt: str,
     prompt_suffix: str,
+    refinement_instruction: str,
 ) -> str:
     """
     Refine a transcription using a second pass with the model.
@@ -168,15 +169,12 @@ def refine_transcription(
         user_prompt: User prompt prefix
         assistant_prompt: Assistant prompt prefix
         prompt_suffix: Prompt suffix
+        refinement_instruction: The instruction for refining the text
 
     Returns:
         str: Refined text
     """
-    refinement_prompt = (
-        f"{user_prompt}Please add proper punctuation to this transcript "
-        f"while preserving the original meaning. The transcript is from a "
-        f'spoken lecture: "{text}"{prompt_suffix}{assistant_prompt}'
-    )
+    refinement_prompt = f'{user_prompt}{refinement_instruction}"{text}"{prompt_suffix}{assistant_prompt}'
 
     with torch.no_grad():
         inputs = processor(text=refinement_prompt, return_tensors="pt").to(model.device)

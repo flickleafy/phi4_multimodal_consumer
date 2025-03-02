@@ -2,6 +2,7 @@
 
 from typing import Dict, List, Optional, TypedDict, Union, Tuple
 import torch
+import logging
 
 
 class GPUInfo(TypedDict):
@@ -33,10 +34,11 @@ def get_gpu_info() -> List[GPUInfo]:
     Returns:
         List[GPUInfo]: Information about each available GPU
     """
+    logger = logging.getLogger("phi4_demo")
     gpu_info: List[GPUInfo] = []
     if torch.cuda.is_available():
         gpu_count = torch.cuda.device_count()
-        print(f"Found {gpu_count} GPU(s)")
+        logger.info(f"Found {gpu_count} GPU(s)")
 
         for i in range(gpu_count):
             # Get GPU properties
@@ -56,26 +58,30 @@ def get_gpu_info() -> List[GPUInfo]:
                 }
             )
 
-            print(
+            logger.info(
                 f"GPU {i}: {props.name}, "
                 f"Memory: {free_memory:.2f}GB free / {total_memory:.2f}GB total"
             )
     else:
-        print("No GPU available, using CPU")
+        logger.info("No GPU available, using CPU")
 
     return gpu_info
 
 
-def get_optimal_settings(gpu_info: List[GPUInfo]) -> OptimalSettings:
+def get_optimal_settings(
+    gpu_info: List[GPUInfo], multi_gpu_threshold_gb: float = 8.0
+) -> OptimalSettings:
     """
     Determine optimal model settings based on available GPU resources.
 
     Args:
         gpu_info: List of GPU information dictionaries
+        multi_gpu_threshold_gb: Minimum free memory in GB required for a GPU to be usable
 
     Returns:
         OptimalSettings: Optimized configuration for model loading
     """
+    logger = logging.getLogger("phi4_demo")
     settings: OptimalSettings = {
         "device_map": "cpu",  # Default to CPU if no suitable GPU
         "quantization": False,  # Avoid LoRA issues
@@ -94,15 +100,21 @@ def get_optimal_settings(gpu_info: List[GPUInfo]) -> OptimalSettings:
     device_id = best_gpu["index"]
     best_gpu_memory = best_gpu["free_memory_gb"]
     settings["device_map"] = f"cuda:{device_id}"
-    print(f"Using GPU {device_id} with {best_gpu_memory:.2f}GB free memory")
+    logger.info(f"Using GPU {device_id} with {best_gpu_memory:.2f}GB free memory")
 
-    # Check for multiple usable GPUs (with at least 8GB free memory)
-    usable_gpus = [gpu["index"] for gpu in gpu_info if gpu["free_memory_gb"] >= 8.0]
+    # Check for multiple usable GPUs (with enough free memory)
+    usable_gpus = [
+        gpu["index"]
+        for gpu in gpu_info
+        if gpu["free_memory_gb"] >= multi_gpu_threshold_gb
+    ]
     settings["available_gpus"] = usable_gpus
 
+    # Enable multi-GPU mode if we have at least 2 usable GPUs
     if len(usable_gpus) > 1:
         settings["multi_gpu"] = True
-        print(f"Multi-GPU mode enabled with GPUs: {usable_gpus}")
+        settings["parallel_processing"] = True
+        logger.info(f"Multi-GPU mode enabled with GPUs: {usable_gpus}")
 
     # Adjust maximum tokens based on available memory
     if best_gpu_memory > 24:
@@ -115,11 +127,7 @@ def get_optimal_settings(gpu_info: List[GPUInfo]) -> OptimalSettings:
     else:
         settings["max_new_tokens"] = 100
 
-    # Enable parallel processing if we have multiple usable GPUs
-    if len(usable_gpus) > 1:
-        settings["parallel_processing"] = True
-
-    print(
+    logger.info(
         f"Optimized settings: max_new_tokens={settings['max_new_tokens']}, "
         f"quantization={settings['quantization']}, "
         f"device_map={settings['device_map']}, "
@@ -136,14 +144,22 @@ def clear_memory(device_id: Optional[int] = None) -> None:
     Args:
         device_id: Specific GPU device ID to clear memory for, or None for all devices
     """
-    if device_id is not None:
-        # Clear memory for specific device
-        with torch.cuda.device(f"cuda:{device_id}"):
+    logger = logging.getLogger("phi4_demo")
+
+    try:
+        if device_id is not None:
+            # Clear memory for specific device
+            with torch.cuda.device(f"cuda:{device_id}"):
+                torch.cuda.empty_cache()
+                logger.debug(f"Cleared memory on GPU {device_id}")
+        else:
+            # Clear memory for all devices
             torch.cuda.empty_cache()
-    else:
-        # Clear memory for all devices
-        torch.cuda.empty_cache()
+            logger.debug("Cleared memory on all GPUs")
 
-    import gc
+        import gc
 
-    gc.collect()
+        gc.collect()
+
+    except Exception as e:
+        logger.warning(f"Error clearing GPU memory: {e}")
