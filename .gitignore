@@ -2,3 +2,8 @@ Phi-4-multimodal-instruct
 cached_files
 venv
 __pycache__
+.github
+results
+bak
+*.log
+config.json
