@@ -1,6 +1,7 @@
 """Image and audio processing utilities."""
 
 from typing import Any, Dict, List, Tuple, Optional, Union, cast
+import gc
 import torch
 import numpy as np
 from PIL import Image
@@ -33,6 +34,27 @@ def process_image(
     try:
         print("Processing image with model...")
 
+        # Pre-processing memory cleanup
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.reset_peak_memory_stats()
+
+        # Resize image if it's too large (helps with memory consumption)
+        # max_dim = 300
+        # if max(image.width, image.height) > max_dim:
+        #     print(
+        #         f"Resizing image from {image.width}x{image.height} to max dimension {max_dim}"
+        #     )
+        #     if image.width > image.height:
+        #         new_width = max_dim
+        #         new_height = int(image.height * (max_dim / image.width))
+        #     else:
+        #         new_height = max_dim
+        #         new_width = int(image.width * (max_dim / image.height))
+        #     image = image.resize((new_width, new_height), Image.LANCZOS)
+        #     print(f"Image resized to {new_width}x{new_height}")
+
         # Ensure image is in RGB mode
         if image.mode != "RGB":
             image = image.convert("RGB")
@@ -46,24 +68,78 @@ def process_image(
         device = next(model.parameters()).device
         inputs = {k: v.to(device) for k, v in inputs.items() if v is not None}
 
-        # Generate with no grad
-        with torch.no_grad():
-            generate_ids = model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                generation_config=generation_config,
-                use_cache=True,
-            )
+        # Free up memory from any unused objects
+        del image
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
+        # Use memory-efficient generation settings
+        generation_kwargs = {
+            "max_new_tokens": max_new_tokens,
+            "use_cache": True,
+            "pad_token_id": processor.tokenizer.pad_token_id,
+            "attention_mask": inputs.get("attention_mask", None),
+        }
+
+        # Only use few beams if we have enough memory
+        if (
+            torch.cuda.is_available()
+            and torch.cuda.get_device_properties(0).total_memory > 14 * 1024**3
+        ):
+            generation_kwargs["num_beams"] = 1  # No beam search to save memory
+
+        # Generate with no grad and careful memory management
+        with torch.no_grad():
+            try:
+                # Try with custom generation config
+                generate_ids = model.generate(
+                    **inputs,
+                    **generation_kwargs,
+                    generation_config=generation_config,
+                )
+            except RuntimeError as e:
+                if "CUDA out of memory" in str(e):
+                    print(
+                        "First attempt failed due to OOM, trying with reduced settings..."
+                    )
+                    torch.cuda.empty_cache()
+                    gc.collect()
+
+                    # Reduce settings further for second attempt
+                    generation_kwargs["max_new_tokens"] = min(max_new_tokens, 50)
+                    generation_kwargs["num_beams"] = 1
+                    generation_kwargs["do_sample"] = False
+
+                    # Try again with reduced settings
+                    generate_ids = model.generate(
+                        **inputs,
+                        **generation_kwargs,
+                    )
+                else:
+                    raise
+
+        # Process output
         generate_ids = generate_ids[:, inputs["input_ids"].shape[1] :]
         response = processor.batch_decode(
             generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
         )[0]
 
+        # Final cleanup
+        del inputs
+        del generate_ids
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         return response
 
     except Exception as e:
         print(f"Error details: {traceback.format_exc()}")
+        # Try to reclaim memory on error
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         return f"Error in image processing: {str(e)}"
 
 
@@ -94,6 +170,12 @@ def process_audio(
     try:
         print("Processing audio with model...")
 
+        # Pre-processing memory cleanup
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.reset_peak_memory_stats()
+
         # Ensure audio data is float32
         if audio_data.dtype != np.float32:
             audio_data = audio_data.astype(np.float32)
@@ -118,21 +200,65 @@ def process_audio(
                 device = next(model.parameters()).device
                 inputs = {k: v.to(device) for k, v in inputs.items() if v is not None}
 
-                # Generate with no grad
-                with torch.no_grad():
-                    generate_ids = model.generate(
-                        **inputs,
-                        max_new_tokens=max_new_tokens,
-                        generation_config=generation_config,
-                        use_cache=True,
-                    )
+                # Free memory
+                del audio_data
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
+                # Generate with no grad and careful memory management
+                with torch.no_grad():
+                    try:
+                        # Use memory-efficient generation settings
+                        generation_kwargs = {
+                            "max_new_tokens": max_new_tokens,
+                            "use_cache": True,
+                            "pad_token_id": processor.tokenizer.pad_token_id,
+                            "attention_mask": inputs.get("attention_mask", None),
+                            "num_beams": 1,  # No beam search to save memory
+                        }
+
+                        # Generate response
+                        generate_ids = model.generate(
+                            **inputs,
+                            **generation_kwargs,
+                            generation_config=generation_config,
+                        )
+                    except RuntimeError as e:
+                        if "CUDA out of memory" in str(e):
+                            print(
+                                "First attempt failed due to OOM, trying with reduced settings..."
+                            )
+                            torch.cuda.empty_cache()
+                            gc.collect()
+
+                            # Reduce settings further for second attempt
+                            generation_kwargs["max_new_tokens"] = min(
+                                max_new_tokens, 50
+                            )
+
+                            # Try again with reduced settings
+                            generate_ids = model.generate(
+                                **inputs,
+                                **generation_kwargs,
+                            )
+                        else:
+                            raise
+
+                # Process output
                 generate_ids = generate_ids[:, inputs["input_ids"].shape[1] :]
                 response = processor.batch_decode(
                     generate_ids,
                     skip_special_tokens=True,
                     clean_up_tokenization_spaces=False,
                 )[0]
+
+                # Final cleanup
+                del inputs
+                del generate_ids
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
                 return response
 
@@ -141,8 +267,17 @@ def process_audio(
             torch._C._jit_set_profiling_executor(prev_profiling_executor)
             torch._C._jit_set_profiling_mode(prev_profiling_mode)
 
+            # Additional cleanup
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
     except Exception as e:
         print(f"Error details: {traceback.format_exc()}")
+        # Try to reclaim memory on error
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         return f"Error in audio processing: {str(e)}"
 
 
@@ -174,21 +309,74 @@ def refine_transcription(
     Returns:
         str: Refined text
     """
-    refinement_prompt = f'{user_prompt}{refinement_instruction}"{text}"{prompt_suffix}{assistant_prompt}'
+    try:
+        # Pre-processing memory cleanup
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
-    with torch.no_grad():
-        inputs = processor(text=refinement_prompt, return_tensors="pt").to(model.device)
-        generate_ids = model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            generation_config=generation_config,
-            use_cache=True,
-        )
-        generate_ids = generate_ids[:, inputs["input_ids"].shape[1] :]
-        refined_text = processor.batch_decode(
-            generate_ids,
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )[0]
+        refinement_prompt = f'{user_prompt}{refinement_instruction}"{text}"{prompt_suffix}{assistant_prompt}'
 
-    return refined_text
+        with torch.no_grad():
+            inputs = processor(text=refinement_prompt, return_tensors="pt")
+
+            # Move inputs to the model's device
+            device = next(model.parameters()).device
+            inputs = {k: v.to(device) for k, v in inputs.items() if v is not None}
+
+            # Memory-efficient generation settings
+            generation_kwargs = {
+                "max_new_tokens": max_new_tokens,
+                "use_cache": True,
+                "num_beams": 1,  # No beam search to save memory
+                "pad_token_id": processor.tokenizer.pad_token_id,
+                "attention_mask": inputs.get("attention_mask", None),
+            }
+
+            try:
+                generate_ids = model.generate(
+                    **inputs,
+                    **generation_kwargs,
+                    generation_config=generation_config,
+                )
+            except RuntimeError as e:
+                if "CUDA out of memory" in str(e):
+                    print(
+                        "Refinement attempt failed due to OOM, trying with reduced settings..."
+                    )
+                    torch.cuda.empty_cache()
+                    gc.collect()
+
+                    # Reduce settings for second attempt
+                    generation_kwargs["max_new_tokens"] = min(max_new_tokens, 50)
+
+                    generate_ids = model.generate(
+                        **inputs,
+                        **generation_kwargs,
+                    )
+                else:
+                    raise
+
+            generate_ids = generate_ids[:, inputs["input_ids"].shape[1] :]
+            refined_text = processor.batch_decode(
+                generate_ids,
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )[0]
+
+        # Final cleanup
+        del inputs
+        del generate_ids
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        return refined_text
+
+    except Exception as e:
+        print(f"Error in refining transcription: {traceback.format_exc()}")
+        # Try to reclaim memory on error
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        return text  # Return original text on error
