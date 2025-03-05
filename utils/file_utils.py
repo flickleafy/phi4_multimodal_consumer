@@ -3,6 +3,7 @@
 import os
 import requests
 import io
+import datetime
 from typing import Tuple, Optional, Union
 from urllib.request import urlopen
 from PIL import Image
@@ -163,3 +164,78 @@ def get_audio(
             f"Audio loaded successfully: {audio_data.shape} {audio_data.dtype} {sample_rate}Hz"
         )
         return audio_data, sample_rate
+
+
+def save_result_to_file(
+    result: str, filename: str, description: str, results_dir: str, task_id: str = ""
+) -> Optional[str]:
+    """
+    Save processing result to a file, avoiding overwriting different content.
+
+    Args:
+        result: Text result to save
+        filename: Name of the file to create
+        description: Description of the content
+        results_dir: Directory to save results
+        task_id: Optional task identifier for the filename
+
+    Returns:
+        Optional[str]: Path to saved file or None if no result
+    """
+    if not result:
+        return None
+
+    # Add task identifier to filename to avoid collisions in parallel processing
+    if task_id:
+        base, ext = os.path.splitext(filename)
+        filename = f"{base}_{task_id}{ext}"
+
+    # Create full filepath
+    filepath = os.path.join(results_dir, filename)
+
+    # Format the content
+    content = f"{description}:\n{result}"
+
+    # Check if the file already exists and compare content
+    if os.path.exists(filepath):
+        try:
+            # Read existing file content
+            with open(filepath, "r") as f:
+                existing_content = f.read()
+
+            # If content is identical, no need to save again
+            if existing_content == content:
+                logger.info(f"File already exists with identical content: {filepath}")
+                return filepath
+
+            # Content is different, create a new file with timestamp
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            base, ext = os.path.splitext(filename)
+            new_filename = f"{base}_{timestamp}{ext}"
+
+            # Try with a timestamp first
+            filepath = os.path.join(results_dir, new_filename)
+
+            # If somehow that file also exists (extremely unlikely), use an incremental counter
+            if os.path.exists(filepath):
+                counter = 1
+                while os.path.exists(filepath):
+                    new_filename = f"{base}_{counter}{ext}"
+                    filepath = os.path.join(results_dir, new_filename)
+                    counter += 1
+        except Exception as e:
+            # In case of any error reading the file, use a new name
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            base, ext = os.path.splitext(filename)
+            filepath = os.path.join(results_dir, f"{base}_{timestamp}{ext}")
+            logger.warning(f"Error comparing file contents, creating new file: {e}")
+
+    # Ensure the directory exists
+    ensure_directory_exists(results_dir)
+
+    # Save the file
+    with open(filepath, "w") as f:
+        f.write(content)
+
+    logger.info(f"Result saved to {filepath}")
+    return filepath

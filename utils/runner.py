@@ -14,7 +14,7 @@ from utils.config_utils import AppConfig
 from utils.gpu_utils import get_gpu_info, get_optimal_settings, clear_memory
 from utils.model_utils import configure_environment, ModelLoader
 from utils.processors import process_image, process_audio, refine_transcription
-from utils.file_utils import get_image, get_audio
+from utils.file_utils import get_image, get_audio, save_result_to_file
 from utils.logging_utils import set_task_context, setup_logging
 
 # Global lock for thread-safe operations
@@ -65,36 +65,6 @@ class ModelRunner:
         """Thread-safe print function with task context."""
         with print_lock:
             print(*args, **kwargs)
-
-    def save_result_to_file(
-        self, result: str, filename: str, description: str, task_id=""
-    ) -> Optional[str]:
-        """
-        Save processing result to a file.
-
-        Args:
-            result: Text result to save
-            filename: Name of the file to create
-            description: Description of the content
-            task_id: Optional task identifier for the filename
-
-        Returns:
-            Optional[str]: Path to saved file or None if no result
-        """
-        if not result:
-            return None
-
-        # Add task identifier to filename to avoid collisions in parallel processing
-        if task_id:
-            base, ext = os.path.splitext(filename)
-            filename = f"{base}_{task_id}{ext}"
-
-        filepath = os.path.join(self.config.results_dir, filename)
-        with open(filepath, "w") as f:
-            f.write(f"{description}:\n{result}")
-
-        self.logger.info(f"Result saved to {filepath}")
-        return filepath
 
     def run_image_demo(self, model, processor, generation_config, settings, task_id=""):
         """Run the image processing demonstration."""
@@ -207,12 +177,19 @@ class ModelRunner:
             model, processor, generation_config, settings
         )
 
-        # Save results
-        self.save_result_to_file(
-            image_result, "image_analysis.txt", "Image Analysis Result"
+        # Save results using the function from file_utils.py
+        save_result_to_file(
+            image_result,
+            "image_analysis.txt",
+            "Image Analysis Result",
+            self.config.results_dir,
         )
-        self.save_result_to_file(
-            audio_result, "audio_transcript.txt", "Audio Transcript Result"
+
+        save_result_to_file(
+            audio_result,
+            "audio_transcript.txt",
+            "Audio Transcript Result",
+            self.config.results_dir,
         )
 
         return image_result, audio_result
@@ -277,18 +254,20 @@ class ModelRunner:
             # Clear task context
             set_task_context("")
 
-            # Save results with task identifiers
-            img_path = self.save_result_to_file(
+            # Save results using the function from file_utils.py
+            img_path = save_result_to_file(
                 image_result,
                 "image_analysis.txt",
                 f"Image Analysis Result (GPU {image_gpu})",
+                self.config.results_dir,
                 f"gpu{image_gpu}",
             )
 
-            audio_path = self.save_result_to_file(
+            audio_path = save_result_to_file(
                 audio_result,
                 "audio_transcript.txt",
                 f"Audio Transcript Result (GPU {audio_gpu})",
+                self.config.results_dir,
                 f"gpu{audio_gpu}",
             )
 
