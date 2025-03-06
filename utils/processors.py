@@ -41,19 +41,19 @@ def process_image(
             torch.cuda.reset_peak_memory_stats()
 
         # Resize image if it's too large (helps with memory consumption)
-        # max_dim = 300
-        # if max(image.width, image.height) > max_dim:
-        #     print(
-        #         f"Resizing image from {image.width}x{image.height} to max dimension {max_dim}"
-        #     )
-        #     if image.width > image.height:
-        #         new_width = max_dim
-        #         new_height = int(image.height * (max_dim / image.width))
-        #     else:
-        #         new_height = max_dim
-        #         new_width = int(image.width * (max_dim / image.height))
-        #     image = image.resize((new_width, new_height), Image.LANCZOS)
-        #     print(f"Image resized to {new_width}x{new_height}")
+        max_dim = 1000
+        if max(image.width, image.height) > max_dim:
+            print(
+                f"Resizing image from {image.width}x{image.height} to max dimension {max_dim}"
+            )
+            if image.width > image.height:
+                new_width = max_dim
+                new_height = int(image.height * (max_dim / image.width))
+            else:
+                new_height = max_dim
+                new_width = int(image.width * (max_dim / image.height))
+            image = image.resize((new_width, new_height), Image.LANCZOS)
+            print(f"Image resized to {new_width}x{new_height}")
 
         # Ensure image is in RGB mode
         if image.mode != "RGB":
@@ -79,7 +79,7 @@ def process_image(
             "max_new_tokens": max_new_tokens,
             "use_cache": True,
             "pad_token_id": processor.tokenizer.pad_token_id,
-            "attention_mask": inputs.get("attention_mask", None),
+            # "attention_mask": inputs.get("attention_mask", None),
         }
 
         # Only use few beams if we have enough memory
@@ -214,7 +214,7 @@ def process_audio(
                             "max_new_tokens": max_new_tokens,
                             "use_cache": True,
                             "pad_token_id": processor.tokenizer.pad_token_id,
-                            "attention_mask": inputs.get("attention_mask", None),
+                            # "attention_mask": inputs.get("attention_mask", None),
                             "num_beams": 1,  # No beam search to save memory
                         }
 
@@ -330,7 +330,7 @@ def refine_transcription(
                 "use_cache": True,
                 "num_beams": 1,  # No beam search to save memory
                 "pad_token_id": processor.tokenizer.pad_token_id,
-                "attention_mask": inputs.get("attention_mask", None),
+                # "attention_mask": inputs.get("attention_mask", None),
             }
 
             try:
