@@ -177,12 +177,13 @@ class ModelRunner:
             model, processor, generation_config, settings
         )
 
-        # Save results using the function from file_utils.py
+        # Save results using the function from file_utils.py with source file information
         save_result_to_file(
             image_result,
             "image_analysis.txt",
             "Image Analysis Result",
             self.config.results_dir,
+            source_file=self.config.image_url,
         )
 
         save_result_to_file(
@@ -190,6 +191,7 @@ class ModelRunner:
             "audio_transcript.txt",
             "Audio Transcript Result",
             self.config.results_dir,
+            source_file=self.config.audio_url,
         )
 
         return image_result, audio_result
