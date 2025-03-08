@@ -57,6 +57,7 @@ class ModelLoader:
         model_path: str,
         settings: OptimalSettings,
         specific_gpu: Optional[int] = None,
+        disable_audio: bool = False,  # New parameter to disable audio components
     ):
         """
         Initialize the model loader.
@@ -65,10 +66,12 @@ class ModelLoader:
             model_path: Path to the model
             settings: Optimization settings for model loading
             specific_gpu: Optional specific GPU to load the model on
+            disable_audio: If True, disable audio components in the processor
         """
         self.model_path = model_path
         self.settings = settings
         self.specific_gpu = specific_gpu
+        self.disable_audio = disable_audio
         self.processor = None
         self.model = None
         self.generation_config = None
@@ -96,13 +99,38 @@ class ModelLoader:
                 bnb_4bit_quant_type="nf4",
             )
 
-        # Load processor
+        # Load the processor
         print(f"Loading model with device_map={device_map}...")
         self.processor = AutoProcessor.from_pretrained(
             self.model_path,
             trust_remote_code=True,
             use_fast=False,  # Model doesn't have a fast processor
         )
+
+        # Explicitly disable audio components if requested
+        # TODO: check implementation, this nevers happens
+        if self.disable_audio:
+            # Override specific audio attributes in the processor
+            if hasattr(self.processor, "feature_extractor_audio"):
+                # Keep reference but disable functionality
+                original_fe = self.processor.feature_extractor_audio
+                self.processor.feature_extractor_audio = None
+                print("✓ Disabled audio feature extractor")
+
+            # Override the processing method to skip audio processing
+            if hasattr(self.processor, "_process_audio"):
+                original_process_audio = self.processor._process_audio
+
+                # Create a stub function that does nothing
+                def disabled_process_audio(*args, **kwargs):
+                    return None
+
+                # Replace with our stub
+                self.processor._process_audio = disabled_process_audio
+                print("✓ Disabled audio processing method")
+
+            # Set a flag to indicate audio is disabled
+            self.processor._audio_disabled = True
 
         # Try loading the model with fallbacks
         try:

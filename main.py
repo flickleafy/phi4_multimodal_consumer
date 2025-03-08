@@ -85,9 +85,15 @@ def setup_argument_parser():
     )
 
     parser.add_argument(
-        "--refinement_instruction",
+        "--refinement-instruction",
         type=str,
         help="Prompt to use for transcription refinement",
+    )
+
+    parser.add_argument(
+        "--demo-mode",
+        action="store_true",
+        help="Run both image and audio processing regardless of URL availability",
     )
 
     return parser
@@ -99,11 +105,24 @@ def main():
     parser = setup_argument_parser()
     args = parser.parse_args()
 
+    # Keep track of which arguments were explicitly provided
+    explicitly_provided = {
+        arg: getattr(args, arg) for arg in vars(args) if getattr(args, arg) is not None
+    }
+
     # Configure environment variables and warning filters
     configure_environment()
 
     # Load configuration from args and config file
     config = load_config_from_args_and_file(args)
+
+    # Set demo_mode explicitly to false if not provided
+    if "demo_mode" not in explicitly_provided:
+        config.demo_mode = False
+
+    # Add flags to track which URLs were explicitly provided
+    config.image_url_provided = "image_url" in explicitly_provided
+    config.audio_url_provided = "audio_url" in explicitly_provided
 
     # Create and run the model runner
     runner = ModelRunner(config)

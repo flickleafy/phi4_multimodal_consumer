@@ -162,45 +162,155 @@ class ModelRunner:
         """Run image and audio processing sequentially on a single device."""
         self.logger.info("Starting sequential processing")
 
-        # Process image with task context
-        set_task_context("image")
-        image_result = self.run_image_demo(
-            model, processor, generation_config, settings
-        )
+        image_result = None
+        audio_result = None
 
-        # Clear memory between tasks
-        clear_memory()
+        # Determine which tasks to run based on config and which URLs were explicitly provided
+        run_image = False
+        run_audio = False
 
-        # Process audio with task context
-        set_task_context("audio")
-        audio_result = self.run_audio_demo(
-            model, processor, generation_config, settings
-        )
+        # Check if image_url was explicitly provided by the user
+        if (
+            hasattr(self.config, "image_url_provided")
+            and self.config.image_url_provided
+        ):
+            run_image = True
+        # Check if image_url is available and we're in demo mode
+        elif (
+            hasattr(self.config, "demo_mode")
+            and self.config.demo_mode
+            and self.config.image_url
+        ):
+            run_image = True
 
-        # Save results using the function from file_utils.py with source file information
-        save_result_to_file(
-            image_result,
-            "image_analysis.txt",
-            "Image Analysis Result",
-            self.config.results_dir,
-            source_file=self.config.image_url,
-        )
+        # Check if audio_url was explicitly provided by the user
+        if (
+            hasattr(self.config, "audio_url_provided")
+            and self.config.audio_url_provided
+        ):
+            run_audio = True
+        # Check if audio_url is available and we're in demo mode
+        elif (
+            hasattr(self.config, "demo_mode")
+            and self.config.demo_mode
+            and self.config.audio_url
+        ):
+            run_audio = True
 
-        save_result_to_file(
-            audio_result,
-            "audio_transcript.txt",
-            "Audio Transcript Result",
-            self.config.results_dir,
-            source_file=self.config.audio_url,
-        )
+        self.logger.info(f"Tasks to run: image={run_image}, audio={run_audio}")
+
+        # If model is not provided, load it now with appropriate options
+        if model is None:
+            # Decide whether to disable audio components based on whether we need audio processing
+            disable_audio = not run_audio
+
+            if disable_audio:
+                self.logger.info(
+                    "Audio processing not needed - disabling audio components to save memory"
+                )
+
+            # Load model with audio components disabled if not needed
+            loader = ModelLoader(
+                self.config.model_path, settings, disable_audio=disable_audio
+            )
+            model, processor, generation_config = loader.load()
+
+        # Process image if needed
+        if run_image:
+            set_task_context("image")
+            image_result = self.run_image_demo(
+                model, processor, generation_config, settings
+            )
+
+            # Save image result
+            if image_result:
+                save_result_to_file(
+                    image_result,
+                    "image_analysis.txt",
+                    "Image Analysis Result",
+                    self.config.results_dir,
+                    source_file=self.config.image_url,
+                )
+
+            # Clear memory between tasks
+            clear_memory()
+
+        # Process audio if needed
+        if run_audio:
+            set_task_context("audio")
+            audio_result = self.run_audio_demo(
+                model, processor, generation_config, settings
+            )
+
+            # Save audio result
+            if audio_result:
+                save_result_to_file(
+                    audio_result,
+                    "audio_transcript.txt",
+                    "Audio Transcript Result",
+                    self.config.results_dir,
+                    source_file=self.config.audio_url,
+                )
 
         return image_result, audio_result
 
     def run_parallel_processing(self, settings):
         """Run image and audio processing in parallel on multiple GPUs."""
+        # Determine which tasks to run based on config and explicitly provided URLs
+        run_image = False
+        run_audio = False
+
+        # Check if image_url was explicitly provided by the user
+        if (
+            hasattr(self.config, "image_url_provided")
+            and self.config.image_url_provided
+        ):
+            run_image = True
+        # Check if image_url is available and we're in demo mode
+        elif (
+            hasattr(self.config, "demo_mode")
+            and self.config.demo_mode
+            and self.config.image_url
+        ):
+            run_image = True
+
+        # Check if audio_url was explicitly provided by the user
+        if (
+            hasattr(self.config, "audio_url_provided")
+            and self.config.audio_url_provided
+        ):
+            run_audio = True
+        # Check if audio_url is available and we're in demo mode
+        elif (
+            hasattr(self.config, "demo_mode")
+            and self.config.demo_mode
+            and self.config.audio_url
+        ):
+            run_audio = True
+
+        self.logger.info(f"Parallel tasks to run: image={run_image}, audio={run_audio}")
+
+        # If only one task, fall back to sequential
+        if not (run_image and run_audio):
+            self.logger.info(
+                "Only one task requested, falling back to sequential processing"
+            )
+            return self.run_sequential_processing(
+                None,
+                None,
+                None,
+                settings,  # These will be loaded in sequential processing
+            )
+
+        # Check if we have enough GPUs for parallel
         if len(settings["available_gpus"]) < 2:
             self.logger.warning("Not enough GPUs available for parallel processing")
-            return None, None
+            return self.run_sequential_processing(
+                None,
+                None,
+                None,
+                settings,  # These will be loaded in sequential processing
+            )
 
         image_gpu = settings["available_gpus"][0]
         audio_gpu = settings["available_gpus"][1]
@@ -243,37 +353,52 @@ class ModelRunner:
             image_model, image_processor, image_gen_config = image_loader.load()
             audio_model, audio_processor, audio_gen_config = audio_loader.load()
 
+            image_result = None
+            audio_result = None
+
             # Use ThreadPoolExecutor for parallel execution with custom workers
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                 # Submit tasks
-                image_future = executor.submit(worker_image)
-                audio_future = executor.submit(worker_audio)
+                futures = {}
+
+                if run_image:
+                    futures["image"] = executor.submit(worker_image)
+
+                if run_audio:
+                    futures["audio"] = executor.submit(worker_audio)
 
                 # Wait for completion and get results
-                image_result = image_future.result()
-                audio_result = audio_future.result()
+                if run_image:
+                    image_result = futures["image"].result()
+
+                if run_audio:
+                    audio_result = futures["audio"].result()
 
             # Clear task context
             set_task_context("")
 
             # Save results using the function from file_utils.py
-            img_path = save_result_to_file(
-                image_result,
-                "image_analysis.txt",
-                f"Image Analysis Result (GPU {image_gpu})",
-                self.config.results_dir,
-                f"gpu{image_gpu}",
-            )
+            if run_image and image_result:
+                img_path = save_result_to_file(
+                    image_result,
+                    "image_analysis.txt",
+                    f"Image Analysis Result (GPU {image_gpu})",
+                    self.config.results_dir,
+                    f"gpu{image_gpu}",
+                    source_file=self.config.image_url,
+                )
 
-            audio_path = save_result_to_file(
-                audio_result,
-                "audio_transcript.txt",
-                f"Audio Transcript Result (GPU {audio_gpu})",
-                self.config.results_dir,
-                f"gpu{audio_gpu}",
-            )
+            if run_audio and audio_result:
+                audio_path = save_result_to_file(
+                    audio_result,
+                    "audio_transcript.txt",
+                    f"Audio Transcript Result (GPU {audio_gpu})",
+                    self.config.results_dir,
+                    f"gpu{audio_gpu}",
+                    source_file=self.config.audio_url,
+                )
 
-            self.logger.info(f"Results saved to {img_path} and {audio_path}")
+            self.logger.info(f"Results saved successfully")
             return image_result, audio_result
 
         finally:
@@ -290,12 +415,54 @@ class ModelRunner:
         set_task_context(run_id)
         self.logger.info(f"Starting Phi-4 multimodal demo ({run_id})")
 
+        # Check which modes to run based on explicitly provided URLs
+        run_image = False
+        run_audio = False
+
+        # Check if image_url was explicitly provided by the user
+        if (
+            hasattr(self.config, "image_url_provided")
+            and self.config.image_url_provided
+        ):
+            run_image = True
+        # Check if image_url is available and we're in demo mode
+        elif (
+            hasattr(self.config, "demo_mode")
+            and self.config.demo_mode
+            and self.config.image_url
+        ):
+            run_image = True
+
+        # Check if audio_url was explicitly provided by the user
+        if (
+            hasattr(self.config, "audio_url_provided")
+            and self.config.audio_url_provided
+        ):
+            run_audio = True
+        # Check if audio_url is available and we're in demo mode
+        elif (
+            hasattr(self.config, "demo_mode")
+            and self.config.demo_mode
+            and self.config.audio_url
+        ):
+            run_audio = True
+
+        self.logger.info(f"Demo tasks to run: image={run_image}, audio={run_audio}")
+
+        if not run_image and not run_audio:
+            self.logger.warning(
+                "No tasks to run. Provide image_url, audio_url, or enable demo_mode."
+            )
+            return
+
         try:
             # Determine whether to use parallel or sequential processing
             if (
                 self.settings.get("multi_gpu", False)
                 and len(self.settings.get("available_gpus", [])) > 1
                 and not self.config.disable_parallel
+                and run_image
+                and run_audio  # Only use parallel if both tasks are needed
             ):
                 # Run parallel processing across multiple GPUs
                 self.logger.info("Using multiple GPUs for parallel processing")
@@ -303,7 +470,9 @@ class ModelRunner:
                 results = self.run_parallel_processing(self.settings)
                 end_time = time.time()
 
-                if results[0] is not None:  # At least one result was successful
+                if (
+                    results[0] is not None or results[1] is not None
+                ):  # At least one result was successful
                     self.logger.info(
                         f"Parallel processing completed in {end_time - start_time:.2f} seconds"
                     )
@@ -314,8 +483,19 @@ class ModelRunner:
                     # Fall back to sequential processing
                     start_time = time.time()
 
-                    # Load model
-                    loader = ModelLoader(self.config.model_path, self.settings)
+                    # Determine whether to disable audio components
+                    disable_audio = not run_audio
+                    if disable_audio:
+                        self.logger.info(
+                            "Audio processing not needed - disabling audio components to prevent gradient checkpointing messages"
+                        )
+
+                    # Load model with audio components disabled if not needed
+                    loader = ModelLoader(
+                        self.config.model_path,
+                        self.settings,
+                        disable_audio=disable_audio,
+                    )
                     model, processor, generation_config = loader.load()
 
                     # Run sequential processing
@@ -334,19 +514,32 @@ class ModelRunner:
                 )
                 start_time = time.time()
 
-                # Load model
-                loader = ModelLoader(self.config.model_path, self.settings)
-                model, processor, generation_config = loader.load()
+                # Only load the model if we have tasks to run
+                if run_image or run_audio:
+                    # Determine whether to disable audio components
+                    disable_audio = not run_audio
+                    if disable_audio:
+                        self.logger.info(
+                            "Audio processing not needed - disabling audio components to prevent gradient checkpointing messages"
+                        )
 
-                # Run sequential processing
-                self.run_sequential_processing(
-                    model, processor, generation_config, self.settings
-                )
+                    # Load model with audio components disabled if not needed
+                    loader = ModelLoader(
+                        self.config.model_path,
+                        self.settings,
+                        disable_audio=disable_audio,
+                    )
+                    model, processor, generation_config = loader.load()
 
-                end_time = time.time()
-                self.logger.info(
-                    f"Sequential processing completed in {end_time - start_time:.2f} seconds"
-                )
+                    # Run sequential processing
+                    self.run_sequential_processing(
+                        model, processor, generation_config, self.settings
+                    )
+
+                    end_time = time.time()
+                    self.logger.info(
+                        f"Sequential processing completed in {end_time - start_time:.2f} seconds"
+                    )
 
         except Exception as e:
             self.logger.exception("Error during demo execution")

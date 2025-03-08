@@ -38,6 +38,9 @@ Format as a professional transcript that preserves the speaker's natural speech 
     refinement_instruction: str = (
         "Please add proper punctuation to this transcript while preserving the original meaning. The transcript is from a spoken lecture: "
     )
+    demo_mode: bool = (
+        False  # Run both image and audio processing regardless of URL availability
+    )
 
     def __post_init__(self):
         """Validate and prepare configuration after initialization."""
