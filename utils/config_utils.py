@@ -19,7 +19,7 @@ class AppConfig:
     )
     cache_dir: str = "cached_files"
     results_dir: str = "results"
-    user_prompt: str = "<|user|>"
+    user_tag: str = "<|user|>"
     assistant_prompt: str = "<|assistant|>"
     prompt_suffix: str = "<|end|>"
     force_cpu: bool = False
@@ -41,6 +41,8 @@ Format as a professional transcript that preserves the speaker's natural speech 
     demo_mode: bool = (
         False  # Run both image and audio processing regardless of URL availability
     )
+    # Enable context data from initial layers for subsequent analysis
+    enable_memory_context: bool = True
 
     def __post_init__(self):
         """Validate and prepare configuration after initialization."""
@@ -75,7 +77,8 @@ def load_config(config_file: str = None) -> AppConfig:
     config = AppConfig()
 
     default_config = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json"
+        os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "config.json"
     )
 
     # Use default config if none specified
@@ -86,9 +89,12 @@ def load_config(config_file: str = None) -> AppConfig:
         with open(config_file, "r") as f:
             config_data = json.load(f)
 
-        # Update config with file values
+        # Dynamically add any missing fields from config_data to AppConfig instance
         for key, value in config_data.items():
             if hasattr(config, key):
+                setattr(config, key, value)
+            else:
+                # Dynamically add new field to config instance
                 setattr(config, key, value)
 
     config.__post_init__()  # Ensure paths are properly set up
@@ -113,6 +119,10 @@ def load_config_from_args_and_file(args) -> AppConfig:
     for key in vars(config):
         if hasattr(args, key) and getattr(args, key) is not None:
             setattr(config, key, getattr(args, key))
+
+    # Handle memory context arguments specially (mutual exclusion)
+    if hasattr(args, 'enable_memory_context') and args.enable_memory_context:
+        config.enable_memory_context = True
 
     return config
 

@@ -8,3 +8,5 @@ bak
 *.log
 config.json
 samples
+phi4-multimodal-env
+docs

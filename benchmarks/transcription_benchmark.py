@@ -23,12 +23,13 @@ CACHE_DIR = os.path.join(
 
 # Output directory for results
 RESULTS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "benchmark_results"
+    os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "benchmark_results"
 )
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
 # Define prompt structure for Phi-4
-USER_PROMPT = "<|user|>"
+USER_TAG = "<|user|>"
 ASSISTANT_PROMPT = "<|assistant|>"
 PROMPT_SUFFIX = "<|end|>"
 
@@ -93,7 +94,7 @@ def benchmark_phi4(model, processor, audio_file):
     # Create transcription prompt
     speech_prompt = """Transcribe the audio to text with proper punctuation, 
     capitalization, and paragraph breaks. Format it as a professional transcript."""
-    prompt = f"{USER_PROMPT}<|audio_1|>{speech_prompt}{PROMPT_SUFFIX}{ASSISTANT_PROMPT}"
+    prompt = f"{USER_TAG}<|audio_1|>{speech_prompt}{PROMPT_SUFFIX}{ASSISTANT_PROMPT}"
 
     # Start timing
     start_time = time.time()
@@ -121,7 +122,7 @@ def benchmark_phi4(model, processor, audio_file):
         )
 
         # Decode the response
-        generate_ids = generate_ids[:, inputs["input_ids"].shape[1] :]
+        generate_ids = generate_ids[:, inputs["input_ids"].shape[1]:]
         response = processor.batch_decode(
             generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
         )[0]
@@ -165,7 +166,8 @@ def run_benchmarks():
         print("Running Phi-4 benchmark...")
         phi4_result = benchmark_phi4(phi4_model, phi4_processor, audio_file)
         results.append(phi4_result)
-        print(f"Phi-4 processing time: {phi4_result['processing_time']:.2f} seconds")
+        print(
+            f"Phi-4 processing time: {phi4_result['processing_time']:.2f} seconds")
 
         # Save individual results
         filename = f"benchmark_{os.path.basename(audio_file).split('.')[0]}.txt"

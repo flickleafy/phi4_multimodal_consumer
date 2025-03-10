@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image
 import traceback
 from .model_utils import suppress_checkpoint_warnings
+from .long_context_fix import get_long_context_generation_kwargs
 
 
 def process_image(
@@ -64,9 +65,16 @@ def process_image(
         inputs = processor(text=text_prompt, images=image, return_tensors="pt")
         print(f"Processor returned keys: {list(inputs.keys())}")
 
-        # Move inputs to the model's device
+        # Move inputs to the model's device and filter out None values and audio-related inputs for image processing
         device = next(model.parameters()).device
-        inputs = {k: v.to(device) for k, v in inputs.items() if v is not None}
+        filtered_inputs = {}
+        for k, v in inputs.items():
+            if v is not None and not k.startswith(('input_audio', 'audio_')):
+                filtered_inputs[k] = v.to(device)
+
+        # Use filtered inputs
+        inputs = filtered_inputs
+        print(f"Filtered inputs for image processing: {list(inputs.keys())}")
 
         # Free up memory from any unused objects
         del image
@@ -74,13 +82,22 @@ def process_image(
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        # Use memory-efficient generation settings
-        generation_kwargs = {
-            "max_new_tokens": max_new_tokens,
-            "use_cache": True,
-            "pad_token_id": processor.tokenizer.pad_token_id,
-            # "attention_mask": inputs.get("attention_mask", None),
-        }
+        # Use memory-efficient generation settings for long context support
+        pad_token_id = processor.tokenizer.pad_token_id or processor.tokenizer.eos_token_id or 50256
+
+        # Check if context reset is active and adjust cache usage
+        import os
+        use_cache = os.environ.get('PHI4_USE_CACHE', 'true').lower() == 'true'
+        generation_count = int(os.environ.get('PHI4_GENERATION_COUNT', '1'))
+
+        print(
+            f"⚡ Processing with KV cache enabled (generation #{generation_count})")
+        if generation_count % 3 == 0:
+            print("🔄 Note: Model will be reloaded after this generation to clear cache")
+
+        generation_kwargs = get_long_context_generation_kwargs(
+            max_new_tokens, pad_token_id, use_cache=use_cache
+        )
 
         # Only use few beams if we have enough memory
         if (
@@ -107,7 +124,8 @@ def process_image(
                     gc.collect()
 
                     # Reduce settings further for second attempt
-                    generation_kwargs["max_new_tokens"] = min(max_new_tokens, 50)
+                    generation_kwargs["max_new_tokens"] = min(
+                        max_new_tokens, 50)
                     generation_kwargs["num_beams"] = 1
                     generation_kwargs["do_sample"] = False
 
@@ -120,7 +138,7 @@ def process_image(
                     raise
 
         # Process output
-        generate_ids = generate_ids[:, inputs["input_ids"].shape[1] :]
+        generate_ids = generate_ids[:, inputs["input_ids"].shape[1]:]
         response = processor.batch_decode(
             generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
         )[0]
@@ -198,7 +216,8 @@ def process_audio(
 
                 # Move inputs to the model's device
                 device = next(model.parameters()).device
-                inputs = {k: v.to(device) for k, v in inputs.items() if v is not None}
+                inputs = {k: v.to(device)
+                          for k, v in inputs.items() if v is not None}
 
                 # Free memory
                 del audio_data
@@ -209,14 +228,25 @@ def process_audio(
                 # Generate with no grad and careful memory management
                 with torch.no_grad():
                     try:
-                        # Use memory-efficient generation settings
-                        generation_kwargs = {
-                            "max_new_tokens": max_new_tokens,
-                            "use_cache": True,
-                            "pad_token_id": processor.tokenizer.pad_token_id,
-                            # "attention_mask": inputs.get("attention_mask", None),
-                            "num_beams": 1,  # No beam search to save memory
-                        }
+                        # Use memory-efficient generation settings for long context support
+                        pad_token_id = processor.tokenizer.pad_token_id or processor.tokenizer.eos_token_id or 50256
+
+                        # Check if context reset is active and adjust cache usage
+                        import os
+                        use_cache = os.environ.get(
+                            'PHI4_USE_CACHE', 'true').lower() == 'true'
+                        generation_count = int(os.environ.get(
+                            'PHI4_GENERATION_COUNT', '1'))
+
+                        print(
+                            f"⚡ Processing audio with KV cache enabled (generation #{generation_count})")
+                        if generation_count % 3 == 0:
+                            print(
+                                "🔄 Note: Model will be reloaded after this generation to clear cache")
+
+                        generation_kwargs = get_long_context_generation_kwargs(
+                            max_new_tokens, pad_token_id, use_cache=use_cache
+                        )
 
                         # Generate response
                         generate_ids = model.generate(
@@ -246,7 +276,7 @@ def process_audio(
                             raise
 
                 # Process output
-                generate_ids = generate_ids[:, inputs["input_ids"].shape[1] :]
+                generate_ids = generate_ids[:, inputs["input_ids"].shape[1]:]
                 response = processor.batch_decode(
                     generate_ids,
                     skip_special_tokens=True,
@@ -287,7 +317,7 @@ def refine_transcription(
     text: str,
     max_new_tokens: int,
     generation_config: Any,
-    user_prompt: str,
+    user_tag: str,
     assistant_prompt: str,
     prompt_suffix: str,
     refinement_instruction: str,
@@ -301,7 +331,7 @@ def refine_transcription(
         text: The text to refine
         max_new_tokens: Maximum number of tokens to generate
         generation_config: Generation configuration
-        user_prompt: User prompt prefix
+        user_tag: User prompt prefix
         assistant_prompt: Assistant prompt prefix
         prompt_suffix: Prompt suffix
         refinement_instruction: The instruction for refining the text
@@ -315,23 +345,35 @@ def refine_transcription(
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        refinement_prompt = f'{user_prompt}{refinement_instruction}"{text}"{prompt_suffix}{assistant_prompt}'
+        refinement_prompt = f'{user_tag}{refinement_instruction}"{text}"{prompt_suffix}{assistant_prompt}'
 
         with torch.no_grad():
             inputs = processor(text=refinement_prompt, return_tensors="pt")
 
             # Move inputs to the model's device
             device = next(model.parameters()).device
-            inputs = {k: v.to(device) for k, v in inputs.items() if v is not None}
+            inputs = {k: v.to(device)
+                      for k, v in inputs.items() if v is not None}
 
-            # Memory-efficient generation settings
-            generation_kwargs = {
-                "max_new_tokens": max_new_tokens,
-                "use_cache": True,
-                "num_beams": 1,  # No beam search to save memory
-                "pad_token_id": processor.tokenizer.pad_token_id,
-                # "attention_mask": inputs.get("attention_mask", None),
-            }
+            # Memory-efficient generation settings for long context support
+            pad_token_id = processor.tokenizer.pad_token_id or processor.tokenizer.eos_token_id or 50256
+
+            # Check if context reset is active and adjust cache usage
+            import os
+            use_cache = os.environ.get(
+                'PHI4_USE_CACHE', 'true').lower() == 'true'
+            generation_count = int(os.environ.get(
+                'PHI4_GENERATION_COUNT', '1'))
+
+            print(
+                f"⚡ Refining transcription with KV cache enabled (generation #{generation_count})")
+            if generation_count % 3 == 0:
+                print(
+                    "🔄 Note: Model will be reloaded after this generation to clear cache")
+
+            generation_kwargs = get_long_context_generation_kwargs(
+                max_new_tokens, pad_token_id, use_cache=use_cache
+            )
 
             try:
                 generate_ids = model.generate(
@@ -348,7 +390,8 @@ def refine_transcription(
                     gc.collect()
 
                     # Reduce settings for second attempt
-                    generation_kwargs["max_new_tokens"] = min(max_new_tokens, 50)
+                    generation_kwargs["max_new_tokens"] = min(
+                        max_new_tokens, 50)
 
                     generate_ids = model.generate(
                         **inputs,
@@ -357,7 +400,7 @@ def refine_transcription(
                 else:
                     raise
 
-            generate_ids = generate_ids[:, inputs["input_ids"].shape[1] :]
+            generate_ids = generate_ids[:, inputs["input_ids"].shape[1]:]
             refined_text = processor.batch_decode(
                 generate_ids,
                 skip_special_tokens=True,

@@ -4,7 +4,7 @@
   "audio_url": "https://upload.wikimedia.org/wikipedia/commons/b/b0/Barbara_Sahakian_BBC_Radio4_The_Life_Scientific_29_May_2012_b01j5j24.flac",
   "cache_dir": "cached_files",
   "results_dir": "results",
-  "user_prompt": "<|user|>",
+  "user_tag": "<|user|>",
   "assistant_prompt": "<|assistant|>",
   "prompt_suffix": "<|end|>",
   "force_cpu": false,

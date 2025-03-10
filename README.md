@@ -1,135 +1,198 @@
-# Phi-4 Multimodal Model Demo
+# Microsoft Phi-4 Multimodal Model Demo
 
-This project demonstrates the capabilities of Microsoft's Phi-4 multimodal model for processing both images and audio inputs.
+This project demonstrates the capabilities of Microsoft's **Phi-4 multimodal model** for processing text, images, and audio inputs in a unified architecture. The Phi-4 multimodal model represents the latest advancement in Microsoft's Phi series, offering state-of-the-art multimodal understanding in a compact form factor.
 
-## Prerequisites
+## 🌟 Features
 
-- Python 3.8 or higher
-- CUDA-compatible GPU (for optimal performance)
-  - CUDA 11.5+ (CUDA 11.6+ required for flash attention)
-- Git
+- **Unified Multimodal Processing**: Single model handles text, image, and audio inputs
+- **128K Token Context**: Extended context length for complex scenarios  
+- **14B Parameters**: Optimized for efficiency while maintaining high performance
+- **Multilingual Support**: 23+ languages for text, with English support for vision and multiple languages for audio
+- **Advanced Reasoning**: Enhanced mathematical and logical reasoning capabilities
+- **Function Calling**: Built-in support for tool and function calling
 
-## Installation
+## 🔧 System Requirements
 
-Follow these steps to set up the project environment:
+### Minimum Requirements
 
-### 1. Clone the repository (if applicable)
+- **Python**: 3.10 or higher (required for Phi-4)
+- **Memory**: 32GB+ RAM recommended
+- **Storage**: 50GB+ available space for model files
+
+### Recommended Requirements
+
+- **GPU**: NVIDIA GPU with 16GB+ VRAM (RTX 4090, A100, H100, etc.)
+- **CUDA**: 12.1+ for optimal performance
+- **Memory**: 64GB+ RAM for optimal performance
+- **Storage**: NVMe SSD for faster model loading
+
+### Supported Platforms
+
+- Linux (Ubuntu 20.04+, CentOS 8+)
+- Windows 10/11 with WSL2
+- macOS (CPU-only, limited performance)
+
+## 🚀 Quick Setup
+
+### Automated Setup (Recommended)
+
+We provide an automated setup script that handles all dependencies:
 
 ```bash
-git clone <repository-url>
-cd microsoft-model
+# Make the setup script executable
+chmod +x setup_environment.sh
+
+# Run the automated setup
+./setup_environment.sh
+
+# Activate the environment  
+source activate_env.sh
 ```
 
-### 2. Create and activate a virtual environment
+The setup script will:
 
-#### On Windows
+- ✅ Check Python version compatibility
+- ✅ Detect and configure CUDA/GPU settings
+- ✅ Create an isolated virtual environment
+- ✅ Install PyTorch with appropriate CUDA support
+- ✅ Install all required dependencies
+- ✅ Verify the installation
+- ✅ Check Phi-4 model availability
 
-```bash
-python -m venv venv
-venv\Scripts\activate
-```
+### Manual Setup
 
-#### On macOS/Linux
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-```
-
-### 3. Install dependencies
-
-For better installation of packages with complex dependencies:
+If you prefer manual installation:
 
 ```bash
-# Install basic build dependencies first
-pip install --upgrade pip setuptools wheel packaging numpy torch
+# Create virtual environment
+python3 -m venv phi4-multimodal-env
+source phi4-multimodal-env/bin/activate
 
-# Then install the rest of the requirements
+# Upgrade pip
+pip install --upgrade pip setuptools wheel
+
+# Install PyTorch with CUDA support
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-## CUDA Version Note
+## 🎯 Getting Started
 
-This project is configured to use the "eager" attention implementation due to compatibility with CUDA 11.5. If you have CUDA 11.6 or higher and want to use flash attention for better performance:
+### 1. Model Download
 
-1. Install flash-attn: `pip install --no-build-isolation flash-attn`
-2. Edit `main.py` to change `_attn_implementation="eager"` to `_attn_implementation="flash_attention_2"`
+Ensure you have the Phi-4 multimodal model files:
 
 ```bash
-pip install --no-build-isolation flash-attn==2.5.5
-
-pip install --no-build-isolation flash-attn==2.7.4.post1
+# If not already present, clone the model
+git clone https://huggingface.co/microsoft/Phi-4-multimodal-instruct
 ```
 
-## Usage
+### 2. Basic Usage
 
-### Basic Usage
-
-To run the demonstration script with default settings:
+Run the demo with default settings:
 
 ```bash
+# Activate the environment first
+source activate_env.sh
+
+# Run the demo
 python main.py
 ```
 
-This script will:
+The demo will:
 
-1. Load the Phi-4 multimodal model
-2. Process an example image and generate a description
-3. Process an audio file and perform transcription
+1. 🤖 Load the Phi-4 multimodal model
+2. 🖼️ Process a sample image and generate detailed description  
+3. 🎵 Process a sample audio file and perform transcription
+4. 💾 Save results to the `results/` directory
 
-### Command Line Parameters
+### 3. Custom Inputs
 
-The script supports the following command-line parameters:
+#### Process Your Own Images
 
 ```bash
-python main.py [OPTIONS]
+# From URL
+python main.py --image-url "https://example.com/your-image.jpg"
+
+# From local file
+python main.py --image-url "./samples/your-image.jpg"
 ```
 
-| Parameter | Description |
-|-----------|-------------|
-| `--model-path PATH` | Path to the model directory (default: "Phi-4-multimodal-instruct") |
-| `--image-url URL` | URL or local path of the image to process |
-| `--audio-url URL` | URL or local path of the audio to process |
-| `--image-prompt PROMPT` | Custom prompt for image analysis |
-| `--speech-prompt PROMPT` | Custom prompt for audio transcription |
-| `--cache-dir DIR` | Directory to cache downloaded files |
-| `--results-dir DIR` | Directory to save results |
-| `--force-cpu` | Force CPU usage even if GPUs are available |
-| `--disable-parallel` | Disable parallel processing even if multiple GPUs are available |
-| `--debug` | Enable debug logging for more verbose output |
-| `--config-file FILE` | Path to a custom JSON configuration file (default: config.json) |
-
-### Examples
-
-Process a custom image from URL:
+#### Process Your Own Audio
 
 ```bash
-python main.py --image-url https://example.com/my-image.jpg
+# From URL  
+python main.py --audio-url "https://example.com/audio.wav"
+
+# From local file
+python main.py --audio-url "./samples/your-audio.wav"
 ```
 
-Process a local image file:
+#### Custom Prompts
 
 ```bash
-python main.py --image-url /path/to/local/image.jpg
+# Custom image analysis
+python main.py --image-prompt "Analyze this image for safety hazards and provide recommendations."
+
+# Custom audio transcription
+python main.py --speech-prompt "Transcribe this audio and identify the main topics discussed."
 ```
 
-Process a local audio file with a custom prompt:
+## 📋 Command Line Options
 
-```bash
-python main.py --audio-url /path/to/recording.wav --speech-prompt "Transcribe this audio with timestamps."
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--model-path PATH` | Path to Phi-4 model directory | `Phi-4-multimodal-instruct` |
+| `--image-url URL` | Image URL or local path | Default sample image |
+| `--audio-url URL` | Audio URL or local path | Default sample audio |
+| `--image-prompt TEXT` | Custom image analysis prompt | Detailed scene description |
+| `--speech-prompt TEXT` | Custom audio transcription prompt | Professional transcription |
+| `--cache-dir DIR` | Cache directory for downloads | `cached_files` |
+| `--results-dir DIR` | Output directory for results | `results` |
+| `--config-file FILE` | JSON configuration file | `config.json` |
+| `--force-cpu` | Force CPU-only processing | Auto-detect GPU |
+| `--disable-parallel` | Disable multi-GPU processing | Auto-enable if available |
+| `--debug` | Enable verbose debug logging | Info level |
+
+## 🔧 Advanced Configuration
+
+### Configuration File
+
+Create a custom `config.json` for your specific needs:
+
+```json
+{
+  "model_path": "Phi-4-multimodal-instruct",
+  "cache_dir": "my_cache",
+  "results_dir": "my_results", 
+  "image_prompt": "Provide a detailed technical analysis of this image.",
+  "speech_prompt": "Transcribe with speaker identification and timestamps.",
+  "force_cpu": false,
+  "debug": true
+}
 ```
 
-Force CPU processing:
+### Performance Optimization
+
+#### GPU Memory Management
 
 ```bash
+# For systems with limited GPU memory
 python main.py --force-cpu
+
+# For multi-GPU systems
+python main.py  # Automatically uses multiple GPUs if available
 ```
 
-Use a custom configuration file:
+#### Model Loading Options
 
-```bash
-python main.py --config-file my_custom_config.json
-```
+The application automatically optimizes based on available hardware:
+
+- **16GB+ VRAM**: Full precision model loading
+- **8-16GB VRAM**: Automatic model sharding
+- **<8GB VRAM**: CPU fallback with warning
 
 Enable debug logging:
 
@@ -148,7 +211,7 @@ You can customize the application behavior through the `config.json` file. The d
   "audio_url": "https://upload.wikimedia.org/wikipedia/commons/b/b0/Barbara_Sahakian_BBC_Radio4_The_Life_Scientific_29_May_2012_b01j5j24.flac",
   "cache_dir": "cached_files",
   "results_dir": "results",
-  "user_prompt": "<|user|>",
+  "user_tag": "<|user|>",
   "assistant_prompt": "<|assistant|>",
   "prompt_suffix": "<|end|>",
   "force_cpu": false,
@@ -175,53 +238,123 @@ If multiple GPUs are available with sufficient memory (above the threshold set i
 
 If you encounter issues with parallel processing, you can disable it using the `--disable-parallel` flag.
 
-## Note
+## 💡 Performance Tips
 
-For systems without a compatible GPU, modify the `_attn_implementation` parameter in `main.py` from "flash_attention_2" to "eager" as noted in the original message.
+### GPU Optimization
 
-## Compatible GPUs
-
-The Phi-4 multimodal model requires an NVIDIA GPU with Ampere architecture or newer to support Flash Attention 2. Compatible GPUs include:
-
-## GPUs by Architecture
-
-### Ampere Architecture
-
-- **Consumer GPUs**: RTX 3090, 3090 Ti, 3080, 3080 Ti, 3070, 3070 Ti, 3060, 3060 Ti
-- **Professional GPUs**: A100, A40, A30, A10, A6000, A5000, A4000
-
-### Newer than Ampere
-
-#### Ada Lovelace Architecture
-
-- **Consumer GPUs**: RTX 4090, 4080, 4080 SUPER, 4070, 4070 Ti, 4070 SUPER, 4060, 4060 Ti
-- **Professional GPUs**: RTX 6000, L40
-
-#### Hopper Architecture
-
-- **Professional GPUs**: H100, H800
-
-#### Blackwell Architecture
-
-- **Professional GPUs**: B100, B200
-
-## Memory Optimization
-
-The Phi-4 multimodal model requires significant GPU memory. If you encounter out-of-memory errors:
-
-1. The script now uses 4-bit quantization to reduce memory usage
-2. You can further reduce memory usage by:
-   - Processing smaller inputs
-   - Reducing `max_new_tokens` in generation settings
-   - Using CPU offloading: `device_map="auto"`
-   - Running only one task (image or audio) at a time
-
-For systems with limited GPU memory:
+For optimal performance:
 
 ```bash
-# Before running heavy ML tasks, free up GPU memory
-sudo sh -c "sync; echo 3 > /proc/sys/vm/drop_caches"
+# Check GPU memory usage
+nvidia-smi
+
+# Clear GPU cache before running
+python -c "import torch; torch.cuda.empty_cache()"
+
+# Run with memory monitoring
+python main.py --debug
 ```
+
+### Memory Management
+
+The application includes automatic memory optimization:
+
+- **Automatic quantization**: Uses 4-bit quantization when beneficial
+- **Model sharding**: Distributes model across multiple GPUs
+- **CPU offloading**: Falls back to CPU for memory-intensive operations
+- **Cache management**: Efficiently manages model and data caching
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+#### CUDA Out of Memory
+
+```bash
+# Try CPU-only mode
+python main.py --force-cpu
+
+# Or reduce precision (automatically handled)
+python main.py --debug  # Shows memory usage
+```
+
+#### Flash Attention Errors
+
+If you encounter flash attention issues:
+
+1. The setup script handles this automatically
+2. Manual fix: Set `_attn_implementation="eager"` in the model configuration
+
+#### Model Loading Errors
+
+```bash
+# Verify model files
+ls -la Phi-4-multimodal-instruct/
+
+# Re-clone if corrupted
+rm -rf Phi-4-multimodal-instruct
+git clone https://huggingface.co/microsoft/Phi-4-multimodal-instruct
+```
+
+### System Requirements
+
+#### GPU Compatibility
+
+**Supported Architectures:**
+
+- ✅ **Ampere** (RTX 30 series, A100, A40, etc.)
+- ✅ **Ada Lovelace** (RTX 40 series, RTX 6000, L40)  
+- ✅ **Hopper** (H100, H800)
+- ✅ **Blackwell** (B100, B200)
+
+**Memory Requirements by GPU:**
+
+| GPU Memory | Model Configuration | Performance |
+|------------|-------------------|-------------|
+| 24GB+ | Full precision | Optimal |
+| 16-24GB | Mixed precision | Good |
+| 8-16GB | Quantized + sharding | Moderate |
+| <8GB | CPU fallback | Limited |
+
+## 📚 Additional Resources
+
+### Official Documentation
+
+- [Phi-4 Technical Report](https://arxiv.org/abs/2503.01743)
+- [Microsoft Phi Portal](https://aka.ms/phi-4-multimodal/azure)
+- [Phi Cookbook](https://github.com/microsoft/PhiCookBook)
+
+### Online Playgrounds
+
+- [Azure AI Studio](https://aka.ms/phi-4-multimodal/azure)
+- [GitHub Models](https://github.com/marketplace/models/azureml/Phi-4-multimodal-instruct/playground)
+- [NVIDIA NIM](https://aka.ms/phi-4-multimodal/nvidia)
+- [Hugging Face Spaces](https://huggingface.co/spaces/microsoft/phi-4-multimodal)
+
+### Sample Applications
+
+- [Thoughts Organizer](https://huggingface.co/spaces/microsoft/ThoughtsOrganizer)
+- [Stories Come Alive](https://huggingface.co/spaces/microsoft/StoriesComeAlive)
+- [Phine Speech Translator](https://huggingface.co/spaces/microsoft/PhineSpeechTranslator)
+
+## 🤝 Contributing
+
+This is a demonstration project. For contributions to the Phi-4 model itself, please refer to Microsoft's official channels.
+
+## 🆕 Changelog
+
+### Version 2.0
+
+- ✅ Updated for Phi-4 multimodal model
+- ✅ Automated setup script with GPU detection
+- ✅ Enhanced error handling and memory management
+- ✅ Improved documentation and troubleshooting guides
+- ✅ Support for latest CUDA versions and RTX 50 series
+
+### Version 1.0
+
+- Basic Phi-4 model support
+- Manual setup process
 
 ## Known Issues
 
@@ -292,7 +425,9 @@ For a comprehensive comparison of different speech recognition models including 
 
 ## License
 
-This project follows the license terms of the Phi-4-multimodal-instruct model. For details, see the LICENSE file and Microsoft's usage terms for the Phi-4 model.
+This project is licensed under the GNU General Public License v3.0 (GPLv3); see the [LICENSE](./LICENSE) file in the project root for details.
+
+The Phi-4 multimodal model is licensed under Microsoft's custom license – see the [LICENSE](Phi-4-multimodal-instruct/LICENSE) file in the model directory.
 
 ## Acknowledgments
 

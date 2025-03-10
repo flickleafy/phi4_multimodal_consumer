@@ -7,11 +7,21 @@ import torch
 from transformers import (
     AutoModelForCausalLM,
     AutoProcessor,
+    AutoTokenizer,
     GenerationConfig,
     BitsAndBytesConfig,
 )
 from contextlib import contextmanager
 from .gpu_utils import OptimalSettings
+from .long_context_fix import (
+    configure_attention_kernels,
+    configure_tokenizer_for_long_context,
+    configure_model_cache_format,
+    verify_long_context_configuration,
+    print_sanity_check,
+)
+
+PHI4_CONTEXT_WINDOW = 131072
 
 
 def configure_environment() -> None:
@@ -58,6 +68,7 @@ class ModelLoader:
         settings: OptimalSettings,
         specific_gpu: Optional[int] = None,
         disable_audio: bool = False,  # New parameter to disable audio components
+        target_context_window: int = PHI4_CONTEXT_WINDOW,  # Support full 128K context
     ):
         """
         Initialize the model loader.
@@ -67,22 +78,28 @@ class ModelLoader:
             settings: Optimization settings for model loading
             specific_gpu: Optional specific GPU to load the model on
             disable_audio: If True, disable audio components in the processor
+            target_context_window: Target context window size (default: PHI4_CONTEXT_WINDOW)
         """
         self.model_path = model_path
         self.settings = settings
         self.specific_gpu = specific_gpu
         self.disable_audio = disable_audio
+        self.target_context_window = target_context_window
         self.processor = None
+        self.tokenizer = None
         self.model = None
         self.generation_config = None
 
     def load(self) -> Tuple[Any, Any, Any]:
         """
-        Load the model, processor and generation config.
+        Load the model, processor and generation config with long context support.
 
         Returns:
             Tuple containing (model, processor, generation_config)
         """
+        # Configure attention kernels BEFORE loading model
+        configure_attention_kernels()
+
         # Configure device map based on specific GPU if provided
         device_map = self.settings["device_map"]
         if self.specific_gpu is not None:
@@ -99,16 +116,31 @@ class ModelLoader:
                 bnb_4bit_quant_type="nf4",
             )
 
+        # Load the tokenizer separately and configure for long context
+        print(
+            f"Loading tokenizer with {self.target_context_window} token context window...")
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            self.model_path,
+            trust_remote_code=True,
+            use_fast=False,  # Model doesn't have a fast tokenizer
+        )
+        self.tokenizer = configure_tokenizer_for_long_context(
+            self.tokenizer, self.target_context_window
+        )
+
         # Load the processor
-        print(f"Loading model with device_map={device_map}...")
+        print(f"Loading processor with device_map={device_map}...")
         self.processor = AutoProcessor.from_pretrained(
             self.model_path,
             trust_remote_code=True,
             use_fast=False,  # Model doesn't have a fast processor
         )
 
+        # Use the configured tokenizer in the processor
+        self.processor.tokenizer = self.tokenizer
+
         # Explicitly disable audio components if requested
-        # TODO: check implementation, this nevers happens
+        # TODO: check implementation, this never happens
         if self.disable_audio:
             # Override specific audio attributes in the processor
             if hasattr(self.processor, "feature_extractor_audio"):
@@ -140,7 +172,7 @@ class ModelLoader:
                 torch_dtype=self.settings["precision"],
                 trust_remote_code=True,
                 quantization_config=None,  # Force no quantization for LoRA compatibility
-                _attn_implementation="eager",
+                _attn_implementation="eager",  # Use eager attention for long context compatibility
                 low_cpu_mem_usage=True,
             )
         except ValueError as e:
@@ -151,13 +183,23 @@ class ModelLoader:
         # Set model to evaluation mode
         self.model.eval()
 
+        # Configure model cache format to avoid deprecation warnings
+        configure_model_cache_format(self.model)
+
         # Load generation config and set max tokens
-        self.generation_config = GenerationConfig.from_pretrained(self.model_path)
+        self.generation_config = GenerationConfig.from_pretrained(
+            self.model_path)
         self.generation_config.max_length = self.settings["max_new_tokens"] + 50
 
-        # Print device info
+        # Print device info and configuration sanity check
         model_device = next(self.model.parameters()).device
         print(f"Model loaded on: {model_device}")
+
+        # Verify configuration is correct
+        verify_long_context_configuration(self.model, self.tokenizer)
+
+        # Print detailed sanity check
+        print_sanity_check(self.model, self.tokenizer)
 
         return self.model, self.processor, self.generation_config
 
@@ -171,18 +213,19 @@ class ModelLoader:
             quantization_config: Configuration for quantization, if any
         """
         try:
-            # First attempt
+            # First attempt with eager attention for long context support
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_path,
                 device_map=self.settings["device_map"],
                 torch_dtype=self.settings["precision"],
                 trust_remote_code=True,
                 quantization_config=None,  # Force no quantization for LoRA compatibility
-                _attn_implementation="eager",
+                _attn_implementation="eager",  # Use eager attention for long context compatibility
                 low_cpu_mem_usage=True,
             )
         except ValueError as e:
-            print(f"Error loading model with {self.settings['device_map']}: {e}")
+            print(
+                f"Error loading model with {self.settings['device_map']}: {e}")
             print("Falling back to single GPU mode...")
 
             self._try_fallback_options()
@@ -191,14 +234,14 @@ class ModelLoader:
         """Try fallback options for loading the model."""
         if torch.cuda.is_available():
             try:
-                # Second attempt: Force to first GPU
+                # Second attempt: Force to first GPU with eager attention
                 self.model = AutoModelForCausalLM.from_pretrained(
                     self.model_path,
                     device_map="cuda:0",
                     torch_dtype=self.settings["precision"],
                     trust_remote_code=True,
                     quantization_config=None,
-                    _attn_implementation="eager",
+                    _attn_implementation="eager",  # Use eager attention for long context compatibility
                     low_cpu_mem_usage=True,
                 )
             except Exception as e2:
@@ -215,6 +258,6 @@ class ModelLoader:
             device_map="cpu",
             torch_dtype=torch.float32,  # CPU works better with float32
             trust_remote_code=True,
-            _attn_implementation="eager",
+            _attn_implementation="eager",  # Use eager attention for long context compatibility
             low_cpu_mem_usage=True,
         )

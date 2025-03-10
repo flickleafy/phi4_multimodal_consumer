@@ -127,7 +127,8 @@ def get_optimal_settings(
 
     # Set device_map based on available memory
     settings["device_map"] = f"cuda:{device_id}"
-    logger.info(f"Using GPU {device_id} with {best_gpu_memory:.2f}GB free memory")
+    logger.info(
+        f"Using GPU {device_id} with {best_gpu_memory:.2f}GB free memory")
 
     # Check for multiple usable GPUs (with enough free memory)
     usable_gpus = [
@@ -167,19 +168,15 @@ def get_optimal_settings(
     else:
         settings["quantization"] = False
 
-    # Adjust maximum tokens based on available memory
-    if best_gpu_memory > 24:
-        settings["max_new_tokens"] = 500
-    elif best_gpu_memory > 16:
-        settings["max_new_tokens"] = 300
-    elif best_gpu_memory > 8:
-        settings["max_new_tokens"] = 200
-    else:
-        settings["max_new_tokens"] = 100
-
-    # For very constrained environments, further reduce max tokens
-    if best_gpu_memory < 5.0:
-        settings["max_new_tokens"] = 50
+    # Adjust maximum tokens based on available memory using dynamic estimation
+    settings["max_new_tokens"] = estimate_max_tokens(
+        total_gpu_memory_gb=best_gpu["total_memory_gb"],
+        model_weight_gb=14.0,  # Update if model size changes
+        memory_per_token_kb=4.0,  # Adjust for precision/implementation
+        batch_size=1,
+        reserved_memory_gb=2.0
+    )
+    if settings["max_new_tokens"] <= 50:
         logger.warning("Very limited GPU memory, reducing max tokens to 50")
 
     logger.info(
@@ -315,7 +312,8 @@ def check_memory_requirements(
     # Get current free memory
     clear_memory(device_id)  # Clear memory first for more accurate reading
 
-    total_memory = torch.cuda.get_device_properties(device_id).total_memory / (1024**3)
+    total_memory = torch.cuda.get_device_properties(
+        device_id).total_memory / (1024**3)
     allocated = torch.cuda.memory_allocated(device_id) / (1024**3)
     free_memory = total_memory - allocated
 
@@ -325,3 +323,33 @@ def check_memory_requirements(
     )
 
     return (free_memory * buffer_factor) >= expected_memory_gb
+
+
+def estimate_max_tokens(
+    total_gpu_memory_gb: float,
+    model_weight_gb: float = 14.0,
+    memory_per_token_kb: float = 4.0,
+    batch_size: int = 1,
+    reserved_memory_gb: float = 2.0
+) -> int:
+    """
+    Estimate the maximum number of tokens that can fit in GPU memory.
+
+    Args:
+        total_gpu_memory_gb: Total GPU memory in GB
+        model_weight_gb: Model weights size in GB
+        memory_per_token_kb: Estimated memory per token in KB
+        batch_size: Batch size for inference
+        reserved_memory_gb: Memory reserved for system/other processes
+
+    Returns:
+        int: Estimated maximum number of tokens
+    """
+    # O(1) complexity: direct calculation
+    available_memory_gb = total_gpu_memory_gb - model_weight_gb - reserved_memory_gb
+    if available_memory_gb <= 0:
+        return 50  # Minimum fallback
+    available_memory_kb = available_memory_gb * 1024 * 1024
+    max_tokens = int(available_memory_kb / (memory_per_token_kb * batch_size))
+    # Clamp to reasonable limits (e.g., model's max context window)
+    return min(max_tokens, 131072)

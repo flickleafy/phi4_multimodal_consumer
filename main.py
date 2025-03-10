@@ -6,6 +6,10 @@ This script demonstrates the Phi-4 multimodal model's capabilities by:
 2. Transcribing audio with proper punctuation
 """
 
+from utils.logging_utils import set_task_context
+from utils.runner import ModelRunner
+from utils.model_utils import configure_environment
+from utils.config_utils import load_config_from_args_and_file, AppConfig
 import argparse
 import sys
 import os
@@ -15,11 +19,6 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.append(str(project_root))
 
-from utils.config_utils import load_config_from_args_and_file, AppConfig
-from utils.model_utils import configure_environment
-from utils.runner import ModelRunner
-from utils.logging_utils import set_task_context
-
 
 def setup_argument_parser():
     """Set up command line argument parser."""
@@ -28,46 +27,54 @@ def setup_argument_parser():
     parser.add_argument(
         "--model-path",
         type=str,
+        default=None,
         help="Path to the model directory",
     )
 
     parser.add_argument(
         "--image-url",
         type=str,
+        default=None,
         help="URL of the image to process",
     )
 
     parser.add_argument(
         "--audio-url",
         type=str,
+        default=None,
         help="URL of the audio to process",
     )
 
     parser.add_argument(
         "--cache-dir",
         type=str,
+        default=None,
         help="Directory to cache downloaded files",
     )
 
     parser.add_argument(
         "--results-dir",
         type=str,
+        default=None,
         help="Directory to save results",
     )
 
     parser.add_argument(
         "--force-cpu",
         action="store_true",
+        default=None,
         help="Force CPU usage even if GPUs are available",
     )
 
     parser.add_argument(
         "--disable-parallel",
         action="store_true",
+        default=None,
         help="Disable parallel processing even if multiple GPUs are available",
     )
 
-    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument("--debug", action="store_true", default=None,
+                        help="Enable debug logging")
 
     parser.add_argument(
         "--config-file",
@@ -77,23 +84,39 @@ def setup_argument_parser():
     )
 
     parser.add_argument(
-        "--image-prompt", type=str, help="Prompt to use for image analysis"
+        "--image-prompt", type=str, default=None, help="Prompt to use for image analysis"
     )
 
     parser.add_argument(
-        "--speech-prompt", type=str, help="Prompt to use for audio transcription"
+        "--speech-prompt", type=str, default=None, help="Prompt to use for audio transcription"
     )
 
     parser.add_argument(
         "--refinement-instruction",
         type=str,
+        default=None,
         help="Prompt to use for transcription refinement",
     )
 
     parser.add_argument(
         "--demo-mode",
         action="store_true",
+        default=None,
         help="Run both image and audio processing regardless of URL availability",
+    )
+
+    parser.add_argument(
+        "--layered-scan",
+        action="store_true",
+        default=None,
+        help="Enable layered scan mode for image processing",
+    )
+
+    parser.add_argument(
+        "--enable-memory-context",
+        action="store_true",
+        default=None,
+        help="Enable memory context for layered analysis (use context from initial layers)",
     )
 
     return parser
