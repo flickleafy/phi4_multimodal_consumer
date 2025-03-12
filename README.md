@@ -5,6 +5,7 @@ This project demonstrates the capabilities of Microsoft's **Phi-4 multimodal mod
 ## 🌟 Features
 
 - **Unified Multimodal Processing**: Single model handles text, image, and audio inputs
+- **Layered Prompting Architecture**: Advanced multi-phase analysis system that decomposes complex visual understanding into specialized layers for systematic, comprehensive image analysis
 - **128K Token Context**: Extended context length for complex scenarios  
 - **14B Parameters**: Optimized for efficiency while maintaining high performance
 - **Multilingual Support**: 23+ languages for text, with English support for vision and multiple languages for audio
