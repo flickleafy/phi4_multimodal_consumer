@@ -1,20 +1,43 @@
-packaging>=20.0
-wheel>=0.38.0
-setuptools>=42.0.0
-numpy>=1.20.0
-torch==2.6.0
+# Core dependencies for Microsoft Phi-4 Multimodal
+
+# Build and packaging tools
+packaging>=24.0
+wheel>=0.42.0
+setuptools>=68.0.0
+
+# Core ML and numerical libraries  
+numpy>=1.24.0
+scipy>=1.11.0
+
+# PyTorch ecosystem (install via setup script with CUDA support)
+# --- GPU core stack (RTX 5090, CUDA 12.8, nightly builds) ---
+torch==2.9.0.dev20250726+cu128      # Nightly build for CUDA 12.8, RTX 5090
+torchvision==0.24.0.dev20250726+cu128
+torchaudio==2.8.0.dev20250726+cu128
+fsspec[http]==2025.3.0              # Pin for datasets compatibility
+# flash-attn==2.8.2                   # Compatible with torch nightly above
+# --- End GPU core stack ---
+
+# Transformers and model libraries
 transformers==4.48.2
 accelerate==1.4.0
-soundfile==0.13.1
-pillow==11.1.0
-scipy==1.15.2
-torchvision==0.21.0
-backoff==2.2.1
 peft==0.14.0
-datasets==3.3.2
-pandas==2.2.3
-# Using a pre-built version of flash-attn that's more stable
-#flash-attn==2.5.5
-evaluate==0.4.3
-sacrebleu==2.5.1
 bitsandbytes>=0.39.0
+
+# Audio processing
+soundfile>=0.12.1
+
+# Image processing  
+pillow>=10.4.0
+
+# Data handling and evaluation
+datasets>=3.1.0
+pandas>=2.2.0
+evaluate>=0.4.3
+sacrebleu>=2.4.0
+
+# Utilities
+backoff>=2.2.1
+
+# Optional performance optimizations (installed conditionally)
+ninja>=1.11.0      # Build system for faster compilation
